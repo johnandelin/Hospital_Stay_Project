@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-
 from sklearn.model_selection import train_test_split, RandomizedSearchCV
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
@@ -9,10 +8,35 @@ from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import ElasticNet
+# Loading in the data
+Hospital_Data = pd.read_csv("....")
+Hosptial_Data.info()
+Hosptial_Data.head()
+Hosptial_Data.describe()
 
-# clean data and feature engineer data (seperate dates and combine admission columns) 
-# save the clean data
-# build the RF pipeline 
+
+
+# Feature engineering the Data (Seperateing addmission_date into Yoear, month, day, and hour
+# adding addmission_count with readmission_count to get a total addmission count for that hour
+# dropping unecessary columns
+Hospital_Data[["Date", "Time"]] = Hospital_Data["addmission_date"].str.split(" ")
+Hospital_Data[["Date"]] = Hospital_Data["addmission_date"].str.split(" ")
+Hospital_Data[["Year","Month","Day"]] = Hospital_Data["Date"].str.split("-")
+Hospital_Data[["Hour"]] = Hospital_Data[Time"].str.split(":")[0]
+Hospital_Data[["Total_Admissions"]] = Hospital_Data[["addmission_count","readmission_count"]].str.sum()
+Hospital_Data.drop(columns = ["addmission_date", "addmission_count", "readmission_count", "Date","Time"])
+Hosptial_Data.info()
+Hosptial_Data.head()
+Hosptial_Data.describe()
+Hostpital_Data.to_csv("Clean_Hostpital_Data", index = FALSE)
+
+# build the RF pipeline
+x = Hospital_Data.drop(columns = ["Total_Admissions"]) # predictors 
+y = Hospital_Data["Total_Admissions"] # response 
+
+
+
+
 # Split data into training and testing sets
 # run CV
 
@@ -138,5 +162,6 @@ plt.ylabel("Residuals")
 plt.title("Residual Plot")
 plt.show()
 ''''
+
 
 
