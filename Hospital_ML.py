@@ -10,7 +10,11 @@ from scipy.stats import randint, uniform
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OrdinalEncoder, StandardScaler
 from category_encoders import TargetEncoder
+from sklearn.ensemble import StackingRegressor
 
+#-------------------
+# Loading in the data
+#--------------------
 Hospital_Data = pd.read_csv("....")
 Hospital_Data.info()
 Hospital_Data.head()
@@ -98,9 +102,9 @@ plt.title("Residual Plot")
 plt.savefig("Residual_Plot_RF.png", bbox_inches='tight', dpi=300)
 plt.clf()
 
-#-------
+#--------------------
 # Elastic Net model 
-#------
+#---------------------
 
 #-------------------------------------------------------
 # preprocessing and defining a EN pipeline
@@ -195,3 +199,78 @@ metrics = pd.DataFrame({
     "R2": [r2_RF, r2_EN]
 })
 print(metrics)
+
+#----------------------------
+# Ensemble methods - Stacking
+#---------------------------
+stacked_model = StackingRegressor(
+    estimators=[
+        ("rf", RF_random_search.best_estimator_),  
+        ("en", EN_random_search.best_estimator_)  
+    ],
+    final_estimator=LinearRegression(),
+    cv=5,
+    n_jobs=-1
+)
+
+#-------------------------------------
+# Fit stacking model and making predictions
+#-------------------------------------
+stacked_model.fit(x_train, y_train)
+y_pred_stack = stacked_model.predict(x_test)
+
+#--------------------------------------
+# Testing model metrics for Stacked Model
+#-----------------------------------------
+rmse_stack = mean_squared_error(y_test, y_pred_stack, squared=False)
+mae_stack = mean_absolute_error(y_test, y_pred_stack)
+r2_stack = r2_score(y_test, y_pred_stack)
+print(f"Stacked Model Metrics:")
+print(f"RMSE: {rmse_stack:.3f}")
+print(f"MAE: {mae_stack:.3f}")
+print(f"R2: {r2_stack:.3f}")
+
+plt.figure(figsize=(6,6))
+plt.scatter(y_test, y_pred_stack, color="purple", alpha=0.7)
+plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], "r--")
+plt.xlabel("Actual Total Admissions")
+plt.ylabel("Predicted Total Admissions")
+plt.title("Predicted vs Actual Stacked Model")
+plt.savefig("Predicted_vs_Actual_Stacked.png", bbox_inches='tight', dpi=300)
+plt.clf()
+
+stacked_residuals = y_test - y_pred_stack
+plt.figure(figsize=(6,4))
+plt.scatter(y_pred_stack, stacked_residuals, color="purple", alpha=0.7)
+plt.hlines(0, y_pred_stack.min(), y_pred_stack.max(), linestyles="dashed", colors="red")
+plt.xlabel("Predicted Total Admissions")
+plt.ylabel("Residuals")
+plt.title("Residual Plot Stacked Model")
+plt.savefig("Residual_Plot_Stacked.png", bbox_inches='tight', dpi=300)
+plt.clf()
+
+#--------------------
+# Update comparison metrics table
+#--------------------
+metrics = pd.DataFrame({
+    "Model": ["Random Forest", "Elastic Net", "Stacked Model"],
+    "RMSE": [rmse_RF, rmse_EN, rmse_stack],
+    "MAE": [mae_RF, mae_EN, mae_stack],
+    "R2": [r2_RF, r2_EN, r2_stack]
+})
+print(metrics)
+
+#--------------------
+# Comparison plot Predicted vs Actual for all three models
+#--------------------
+plt.figure(figsize=(6,6))
+plt.scatter(y_test, y_pred_RF, color="blue", alpha=0.6, label="Random Forest")
+plt.scatter(y_test, y_pred_EN, color="orange", alpha=0.6, label="Elastic Net")
+plt.scatter(y_test, y_pred_stack, color="purple", alpha=0.6, label="Stacked Model")
+plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], "r--")
+plt.xlabel("Actual Total Admissions")
+plt.ylabel("Predicted Total Admissions")
+plt.title("Predicted vs Actual Comparison - All Models")
+plt.legend()
+plt.savefig("Predicted_vs_Actual_All_Models.png", bbox_inches='tight', dpi=300)
+plt.show()
