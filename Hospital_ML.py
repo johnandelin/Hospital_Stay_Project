@@ -3,165 +3,195 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split, RandomizedSearchCV
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import ElasticNet
-# Loading in the data
+from scipy.stats import randint, uniform
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OrdinalEncoder, StandardScaler
+from category_encoders import TargetEncoder
+
 Hospital_Data = pd.read_csv("....")
-Hosptial_Data.info()
-Hosptial_Data.head()
-Hosptial_Data.describe()
+Hospital_Data.info()
+Hospital_Data.head()
+Hospital_Data.describe()
+#--------------------
+# feature engineering
+#--------------------
+Hospital_Data["addmission_date"] = pd.to_datetime(Hospital_Data["addmission_date"])
+Hospital_Data["Year"] = Hospital_Data["addmission_date"].dt.year
+Hospital_Data["Month"] = Hospital_Data["addmission_date"].dt.month
+Hospital_Data["Day"] = Hospital_Data["addmission_date"].dt.day
+Hospital_Data["Hour"] = Hospital_Data["addmission_date"].dt.hour
+Hospital_Data["Total_Admissions"] = Hospital_Data["addmission_count"] + Hospital_Data["readmission_count"]
+Hospital_Data = Hospital_Data.drop(columns=["addmission_date", "addmission_count", "readmission_count"])
+Hospital_Data.to_csv("Clean_Hospital_Data.csv", index=False)
 
+#-------------------------------------------------------
+# preprocessing and defining a random forest pipeline
+#-------------------------------------------------------
+x = Hospital_Data.drop(columns=["Total_Admissions"])
+y = Hospital_Data["Total_Admissions"]
 
+cat_cols = x.select_dtypes(include="object").columns
+num_cols = x.select_dtypes(include=np.number).columns
 
-# Feature engineering the Data (Seperateing addmission_date into Yoear, month, day, and hour
-# adding addmission_count with readmission_count to get a total addmission count for that hour
-# dropping unecessary columns
-Hospital_Data[["Date", "Time"]] = Hospital_Data["addmission_date"].str.split(" ")
-Hospital_Data[["Date"]] = Hospital_Data["addmission_date"].str.split(" ")
-Hospital_Data[["Year","Month","Day"]] = Hospital_Data["Date"].str.split("-")
-Hospital_Data[["Hour"]] = Hospital_Data[Time"].str.split(":")[0]
-Hospital_Data[["Total_Admissions"]] = Hospital_Data[["addmission_count","readmission_count"]].str.sum()
-Hospital_Data.drop(columns = ["addmission_date", "addmission_count", "readmission_count", "Date","Time"])
-Hosptial_Data.info()
-Hosptial_Data.head()
-Hosptial_Data.describe()
-Hostpital_Data.to_csv("Clean_Hostpital_Data", index = FALSE)
+RF_preprocess = ColumnTransformer(
+    transformers=[("cat", OrdinalEncoder(), cat_cols)],
+    remainder="passthrough")
 
-# build the RF pipeline
-x = Hospital_Data.drop(columns = ["Total_Admissions"]) # predictors 
-y = Hospital_Data["Total_Admissions"] # response 
+RF_pipeline = Pipeline([
+    ("preprocess", RF_preprocess),
+    ("model", RandomForestRegressor(n_estimators=500))])
 
+Parameter_Distributions = {
+    "model__max_depth": randint(5, 50),
+    "model__min_samples_split": randint(2, 20)}
+#-----------------------------------------
+# Setting up and running cross validation RF
+#----------------------------------------
+x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.20, random_state=42)
 
+RF_random_search = RandomizedSearchCV(
+    estimator = RF_pipeline,
+    param_distributions = Parameter_Distributions,
+    n_iter= 20,
+    cv= 5,
+    scoring = "neg_mean_squared_error",
+    n_jobs=-1
+)
 
+#-------------------------------------
+# Making predictions on the test data RF
+#-------------------------------------
+RF_random_search.fit(x_train, y_train)
+y_pred_RF = RF_random_search.predict(x_test)
+print(f"Best model: {RF_random_search.best_estimator_}")
+print(f"Best Parameters: {RF_random_search.best_params_}")
 
-# Split data into training and testing sets
-# run CV
+#-------------------------
+# Testing model metrics RF
+#-------------------------
+rmse_RF = mean_squared_error(y_test, y_pred_RF, squared=False)
+mae_RF = mean_absolute_error(y_test, y_pred_RF)
+r2_RF = r2_score(y_test, y_pred_RF)
+print(f"RMSE: {rmse_RF:.3f}")
+print(f"MAE: {mae_RF:.3f}")
+print(f"R2: {r2_RF:.3f}")
 
-# Evaluate model performace metrics 
-# Predicted vs actual (standard and over time) 
-# Do the same for Elastic Net
+plt.figure(figsize=(6,6))
+plt.scatter(y_test, y_pred_RF, color="blue", alpha=0.7)
+plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], "r--")
+plt.xlabel("Actual Total Admissions")
+plt.ylabel("Predicted Total Admissions")
+plt.title("Predicted vs Actual")
+plt.savefig("Predicted_vs_Actual_RF.png", bbox_inches='tight', dpi=300)
+plt.clf()
 
-'''' RF example 
-# ----------------------------------------------------------
-# 1. Fake dataset
-# ----------------------------------------------------------
-data = pd.DataFrame({
-    "age": [25, 40, 60, 70, 33, 50, 45, 80],
-    "severity": [1, 2, 3, 2, 1, 3, 2, 3],
-    "hospital": ["A", "B", "A", "C", "C", "A", "B", "C"],
-    "condition": ["asthma", "copd", "asthma", "heart", "asthma", "copd", "heart", "heart"],
-    "length_of_stay": [3.1, 5.2, 4.8, 7.0, 2.9, 6.1, 5.5, 8.2]
-})
+RF_residuals = y_test - y_pred_RF
+plt.figure(figsize=(6,4))
+plt.scatter(y_pred_RF, RF_residuals, color="green", alpha=0.7)
+plt.hlines(0, y_pred_RF.min(), y_pred_RF.max(), linestyles="dashed", colors="red")
+plt.xlabel("Predicted Total Admissions")
+plt.ylabel("Residuals")
+plt.title("Residual Plot")
+plt.savefig("Residual_Plot_RF.png", bbox_inches='tight', dpi=300)
+plt.clf()
 
-X = data.drop(columns=["length_of_stay"])
-y = data["length_of_stay"]
+#-------
+# Elastic Net model 
+#------
 
-# ----------------------------------------------------------
-# 2. Define column groups
-# ----------------------------------------------------------
-numeric_features = ["age", "severity"]
-categorical_features = ["hospital", "condition"]
-
-# ----------------------------------------------------------
-# 3. Preprocessing
-# ----------------------------------------------------------
-preprocess = ColumnTransformer(
+#-------------------------------------------------------
+# preprocessing and defining a EN pipeline
+#-------------------------------------------------------
+EN_preprocess = ColumnTransformer(
     transformers=[
-        ("num", StandardScaler(), numeric_features),
-        ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_features)
+        ("cat", TargetEncoder(), cat_cols),
+        ("num", StandardScaler(), num_cols)
     ]
 )
 
-# ----------------------------------------------------------
-# 4. Full pipeline
-# ----------------------------------------------------------
-pipe = Pipeline(steps=[
-    ("prep", preprocess),
-    ("model", RandomForestRegressor(random_state=42))
+EN_pipeline = Pipeline([
+    ("preprocess", EN_preprocess),
+    ("model", ElasticNet(max_iter=10000))
 ])
 
-# ----------------------------------------------------------
-# 5. Randomized hyperparameter distributions
-# ----------------------------------------------------------
-param_dist = {
-    "model__n_estimators": randint(100, 500),      # integer 100–500
-    "model__max_depth": randint(5, 50),            # integer 5–50
-    "model__min_samples_split": randint(2, 20)     # integer 2–20
+#-----------------------------------------
+# Setting up and running cross validation EN
+#----------------------------------------
+param_distributions = {
+    "model__alpha": uniform(0.01, 10),
+    "model__l1_ratio": uniform(0, 1)
 }
 
-# ----------------------------------------------------------
-# 6. Train/test split
-# ----------------------------------------------------------
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.25, random_state=42
-)
-
-# ----------------------------------------------------------
-# 7. RandomizedSearchCV
-# ----------------------------------------------------------
-random_search = RandomizedSearchCV(
-    estimator=pipe,
-    param_distributions=param_dist,
-    n_iter=20,          # number of random combinations to try
-    cv=3,
+EN_random_search = RandomizedSearchCV(
+    estimator = EN_pipeline,
+    param_distributions=param_distributions,
+    n_iter=50,
+    cv=5,
     scoring="neg_mean_squared_error",
-    n_jobs=-1,
-    random_state=42
+    n_jobs=-1
 )
 
-random_search.fit(X_train, y_train)
+#-------------------------------------
+# Making predictions on the test data EN
+#-------------------------------------
+EN_random_search.fit(x_train, y_train)
+y_pred_EN = EN_random_search.predict(x_test)
+print(f"Best model: {EN_random_search.best_estimator_}")
+print(f"Best Parameters: {EN_random_search.best_params_}")
 
-# ----------------------------------------------------------
-# 8. Evaluate on test set
-# ----------------------------------------------------------
-preds = random_search.predict(X_test)
+#-------------------------
+# Testing model metrics EN
+#-------------------------
+rmse_EN = mean_squared_error(y_test, y_pred_EN, squared=False)
+mae_EN = mean_absolute_error(y_test, y_pred_EN)
+r2_EN = r2_score(y_test, y_pred_EN)
+print(f"RMSE: {rmse_EN:.3f}")
+print(f"MAE: {mae_EN:.3f}")
+print(f"R2: {r2_EN:.3f}")
 
-print("Best Parameters:", random_search.best_params_)
-print("Test Predictions:", preds)
-
-# ----------------------------------------------------------
-# Assuming 'random_search' is your fitted RandomizedSearchCV
-# ----------------------------------------------------------
-# Make predictions on the test set
-y_pred = random_search.predict(X_test)
-
-# ----------------------------------------------------------
-# 9 Calculate regression metrics
-# ----------------------------------------------------------
-rmse = mean_squared_error(y_test, y_pred, squared=False)  # RMSE
-mae = mean_absolute_error(y_test, y_pred)
-r2 = r2_score(y_test, y_pred)
-
-print(f"RMSE: {rmse:.3f}")
-print(f"MAE: {mae:.3f}")
-print(f"R²: {r2:.3f}")
-
-# ----------------------------------------------------------
-# 10 Predicted vs Actual scatter plot
-# ----------------------------------------------------------
 plt.figure(figsize=(6,6))
-plt.scatter(y_test, y_pred, color="blue", alpha=0.7)
+plt.scatter(y_test, y_pred_EN, color="blue", alpha=0.7)
 plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], "r--")
-plt.xlabel("Actual Length of Stay")
-plt.ylabel("Predicted Length of Stay")
-plt.title("Predicted vs Actual")
-plt.show()
+plt.xlabel("Actual Total Admissions")
+plt.ylabel("Predicted Total Admissions")
+plt.title("Predicted vs Actual Elastic Net")
+plt.savefig("Predicted_vs_Actual_EN.png", bbox_inches='tight', dpi=300)
+plt.clf()
 
-# ----------------------------------------------------------
-# 11 Residual plot (errors vs predicted)
-# ----------------------------------------------------------
-residuals = y_test - y_pred
+EN_residuals = y_test - y_pred_EN
 plt.figure(figsize=(6,4))
-plt.scatter(y_pred, residuals, color="green", alpha=0.7)
-plt.hlines(0, y_pred.min(), y_pred.max(), linestyles="dashed", colors="red")
-plt.xlabel("Predicted Length of Stay")
+plt.scatter(y_pred_EN, EN_residuals, color="green", alpha=0.7)
+plt.hlines(0, y_pred_EN.min(), y_pred_EN.max(), linestyles="dashed", colors="red")
+plt.xlabel("Predicted Total Admissions")
 plt.ylabel("Residuals")
-plt.title("Residual Plot")
+plt.title("Residual Plot Elastic Net")
+plt.savefig("Residual_Plot_EN.png", bbox_inches='tight', dpi=300)
+plt.clf()
+
+#--------------------
+# Comparison plot Predicted vs Actual for both models
+#--------------------
+plt.figure(figsize=(6,6))
+plt.scatter(y_test, y_pred_RF, color="blue", alpha=0.6, label="Random Forest")
+plt.scatter(y_test, y_pred_EN, color="orange", alpha=0.6, label="Elastic Net")
+plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], "r--")
+plt.xlabel("Actual Total Admissions")
+plt.ylabel("Predicted Total Admissions")
+plt.title("Predicted vs Actual Comparison")
+plt.legend()
+plt.savefig("Predicted_vs_Actual_Comparison.png", bbox_inches='tight', dpi=300)
 plt.show()
-''''
 
-
-
+#--------------------
+# Comparison metrics table
+#--------------------
+metrics = pd.DataFrame({
+    "Model": ["Random Forest", "Elastic Net"],
+    "RMSE": [rmse_RF, rmse_EN],
+    "MAE": [mae_RF, mae_EN],
+    "R2": [r2_RF, r2_EN]
+})
+print(metrics)
